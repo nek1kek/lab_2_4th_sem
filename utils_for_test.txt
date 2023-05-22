@@ -1,0 +1,1 @@
+cat B.c | grep c | grep ";"
