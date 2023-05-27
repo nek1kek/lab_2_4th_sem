@@ -64,7 +64,7 @@ void split_block(t_block b, size_t s) { // здесь добавляем про�
     b->next = new;
 }
 
-size_t align8(size_t s) {//округляем к 8 все 
+size_t align8(size_t s) {//округляем к 8 все
     if ((s & 0x7) == 0) { // побитово сравним, если в нуль обратся, то значит все окей
         return s;
     }
@@ -86,7 +86,7 @@ int valid_addr(void *p) { //является ли валидным адресс�
     return 0; // для случая если не первого блока
 }
 
-t_block fusion(t_block b) {//объединение 
+t_block fusion(t_block b) {//объединение
     if (b->next && b->next->free) {
         b->size += BLOCK_SIZE + b->next->size;
         b->next = b->next->next;
@@ -108,6 +108,8 @@ void copy_block(t_block src, t_block dst) { // для реалока чтобы 
 }
 
 void *my_malloc(size_t size) {
+    pthread_mutex_lock(&mutex);
+
     t_block b, last;
     size_t s;
     s = align8(size); // округлим до 8 размер, чтобы не парится
@@ -135,6 +137,7 @@ void *my_malloc(size_t size) {
         }
         first_block = b;
     }
+    pthread_mutex_unlock(&mutex);
     return b->data;
 }
 
@@ -193,6 +196,7 @@ void *my_realloc(void *p, size_t size) {
 }
 
 void my_free(void *p) {// очищаем ссылаясь на первый указатель
+    pthread_mutex_lock(&mutex);
     t_block b;
     if (valid_addr(p)) { // если адрес валидный(есть)
         b = get_block(p); // получим блок по адресуу
@@ -212,6 +216,8 @@ void my_free(void *p) {// очищаем ссылаясь на первый ук
             brk(b); // двигаем границу кучи вниз
         }
     }
+    pthread_mutex_unlock(&mutex);
+
 }
 
 
@@ -223,24 +229,14 @@ struct testing {
 };
 
 void *alloc_f(struct testing *arg) {
-
-    pthread_mutex_lock(&mutex);
-
-    printf("    %d поток:\n",arg->i);//чтобы посмотреть крутизну многопоточки
     // так как инт весит 4 байт, то:
     arg->biggest = my_malloc(sizeof(int) * 256);
     arg->smallest = my_malloc(sizeof(int) * 4);
-    printf("        Address biggest:\t%p\n        Address smallest:\t%p\n",
-                                (arg->biggest), (arg->smallest));
-
-    pthread_mutex_unlock(&mutex);
-    pthread_exit(NULL);
+    printf("    %d поток:\n        Address biggest:\t%p\n        Address smallest:\t%p\n",
+                arg->i, (arg->biggest), (arg->smallest));
 }
 
 void *add_elements(struct testing *arg) {
-
-    pthread_mutex_lock(&mutex);
-
     for (int i = 0; i < 256; ++i) {
         arg->biggest[i] = i;
     }
@@ -248,13 +244,9 @@ void *add_elements(struct testing *arg) {
         arg->smallest[i] = i;
     }
 
-    pthread_mutex_unlock(&mutex);
-
-    pthread_exit(NULL);
 }
 
 void *print_result(struct testing *arg) {
-    pthread_mutex_lock(&mutex);
 
     FILE* file = fopen("testing.txt", "a"); //дескриптор
     fprintf(file, "\n\nBiggest (count: 16):\n");
@@ -271,8 +263,6 @@ void *print_result(struct testing *arg) {
     my_free(arg->smallest);
 
     fclose(file);
-    pthread_mutex_unlock(&mutex);
-    pthread_exit(NULL);
 }
 
 
@@ -285,14 +275,14 @@ int check_decorator(result){
 
 
 int main() {
+    //Инициализация мьютекса
+    pthread_mutex_init(&mutex, NULL);
+
     for (int z = 0; z<NUM_OF_CYCLES;z++){
         printf("\n%d итерация\n",z);
         pthread_t threads[NUM_OF_THREADS];
         struct testing testing[NUM_OF_THREADS/3];
         size_t i;
-
-        //Инициализация мьютекса
-        pthread_mutex_init(&mutex, NULL);
 
         // первая треть потоков - создающая
         for (i = 0; i < NUM_OF_THREADS/3; i++) {
@@ -320,10 +310,9 @@ int main() {
         for (i = 2*NUM_OF_THREADS/3; i < NUM_OF_THREADS; i++) {
             check_decorator(pthread_join(threads[i], NULL));
         }
-        //Уничтожение мьютекса
-        pthread_mutex_destroy(&mutex);
     }
+
+    //Уничтожение мьютекса
+    pthread_mutex_destroy(&mutex);
     return 0;
 }
-
-
